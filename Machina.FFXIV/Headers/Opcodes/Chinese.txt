@@ -1,5 +1,5 @@
 StatusEffectList|0287
-StatusEffectList2|CAFE
+StatusEffectList2|035d
 BossStatusEffectList|CAFE
 Ability1|0085
 Ability8|00ff
