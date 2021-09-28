@@ -20,4 +20,5 @@ ActorSetPos|03d1
 ActorGauge|01f6
 PresetWaymark|0298
 Waymark|0113
+SystemLogMessage|0000
 ActorDrink|CAFE
