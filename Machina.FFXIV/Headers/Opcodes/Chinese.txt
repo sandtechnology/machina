@@ -1,5 +1,5 @@
 StatusEffectList|0347
-StatusEffectList2|035D
+StatusEffectList2|013D
 BossStatusEffectList|CAFE
 Ability1|006E
 Ability8|03C0
@@ -20,5 +20,5 @@ ActorSetPos|0259
 ActorGauge|0226
 Waymark|0303
 PresetWaymark|032B
-SystemLogMessage|CAFE
+SystemLogMessage|03C5
 ActorDrink|CAFE
