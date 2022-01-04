@@ -15,6 +15,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
@@ -35,9 +36,48 @@ namespace Machina.Sockets
         private CancellationTokenSource _tokenSource;
         private bool _disposedValue;
 
-        public void StartCapture(uint localAddress, uint remoteAddress = 0)
+        public PCapCaptureSocket() : this(new RPCapConf())
         {
-            StopCapture();
+        }
+
+        public PCapCaptureSocket(RPCapConf config)
+        {
+            _auth = new pcap_rmtauth();
+            _auth.username = config.username;
+            _auth.password = config.password;
+            _auth.type = string.IsNullOrEmpty(config.username) ? RPCAP_RMTAUTH_NULL : RPCAP_RMTAUTH_PWD;
+            _file = config.file;
+            _source = BuildSource(config.host, config.port);
+            Trace.WriteLine($"PCapCaptureSocket: Capture source was set to [{_source}].", "DEBUG-MACHINA");
+        }
+
+        private string BuildSource(string host, int port)
+        {
+            if (!string.IsNullOrEmpty(_file))
+                return new StringBuilder($"file://{System.IO.Path.GetDirectoryName(_file)}", PCAP_BUF_SIZE).ToString();
+            StringBuilder source = new StringBuilder("rpcap://", PCAP_BUF_SIZE);
+            if (string.IsNullOrEmpty(host))
+                return source.ToString();
+            _ = source.Append(host.Contains(":") ? $"[{host}]" : host);
+            _ = source.Append(port > 0 ? $":{port}/" : ":2002/");
+            return source.ToString();
+        }
+
+        private PcapDevice GetDevice(uint localAddress)
+        {
+            IList<PcapDevice> devices = PcapDevice.GetAllDevices(_source, ref _auth);
+            PcapDevice device;
+
+            if (_source.StartsWith("file://", StringComparison.InvariantCultureIgnoreCase))
+            {
+                device = devices.FirstOrDefault(x => x.Name.Contains(_file));
+                if (string.IsNullOrWhiteSpace(device?.Name))
+                {
+                    Trace.WriteLine($"PCapCaptureSocket: File [{_file}] does not exist or is not in a valid pcap format.", "DEBUG-MACHINA");
+                    return null;
+                }
+                return device;
+            }
 
             PcapDevice device = PcapDevice.GetAllDevices().FirstOrDefault(x =>
                 x.Addresses.Contains(localAddress));
@@ -91,12 +131,7 @@ namespace Machina.Sockets
             }
             catch (Exception ex)
             {
-                // clean up device
-                if (_activeDevice.Handle != IntPtr.Zero)
-                    pcap_close(_activeDevice.Handle);
-
-                _activeDevice = null;
-
+                FreeDevice();
                 throw new PcapException($"PCapCaptureSocket: Unable to open winpcap device [{device.Name}].", ex);
             }
             finally
@@ -124,28 +159,13 @@ namespace Machina.Sockets
                 _tokenSource?.Dispose();
                 _tokenSource = null;
 
+                FreeDevice();
                 FreeBuffers();
-
-                if (_activeDevice != null)
-                {
-                    if (_activeDevice.Handle != IntPtr.Zero)
-                        pcap_close(_activeDevice.Handle);
-
-                    _activeDevice.Handle = IntPtr.Zero;
-                }
-
             }
             catch (Exception ex)
             {
                 Trace.WriteLine($"PCapCaptureSocket: Exception cleaning up RawPCap class. {ex}", "DEBUG-MACHINA");
             }
-        }
-
-
-        private void FreeBuffers()
-        {
-            while (_pendingBuffers.TryDequeue(out Tuple<byte[], int> next))
-                BufferCache.ReleaseBuffer(next.Item1);
         }
 
         public CapturedData Receive()
@@ -204,14 +224,13 @@ namespace Machina.Sockets
                         if (packetHeader.caplen <= layer2Length)
                             continue;
 
-                        byte[] buffer = BufferCache.AllocateBuffer();
-
                         // prepare data - skip the 14-byte ethernet header
                         int allocatedSize = (int)packetHeader.caplen - layer2Length;
-                        if (allocatedSize > buffer.Length)
+                        if (allocatedSize > 0x1000000)
                             Trace.WriteLine($"PCapCaptureSocket: packet length too large: {allocatedSize} ", "DEBUG-MACHINA");
                         else
                         {
+                            byte[] buffer = new byte[allocatedSize];
                             Marshal.Copy(packetDataPtr + layer2Length, buffer, 0, allocatedSize);
 
                             _pendingBuffers.Enqueue(new Tuple<byte[], int>(buffer, allocatedSize));
@@ -231,6 +250,28 @@ namespace Machina.Sockets
             }
         }
 
+        private void FreeDevice()
+        {
+            if (_activeDevice != null)
+            {
+                if (_activeDevice.Handle != IntPtr.Zero)
+                    pcap_close(_activeDevice.Handle);
+
+                _activeDevice.Handle = IntPtr.Zero;
+
+                _activeDevice = null;
+            }
+
+        }
+
+        private void FreeBuffers()
+        {
+            while (_pendingBuffers.TryDequeue(out Tuple<byte[], int> _))
+            {
+                // do nothing
+            }
+        }
+
         #region IDisposable
         protected virtual void Dispose(bool disposing)
         {
@@ -241,6 +282,7 @@ namespace Machina.Sockets
                     _tokenSource?.Dispose();
                     _monitorTask?.Dispose();
 
+                    FreeDevice();
                     FreeBuffers();
                 }
                 _disposedValue = true;
