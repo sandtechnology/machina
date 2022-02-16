@@ -142,7 +142,15 @@ namespace Machina.Infrastructure
                 if (connections.Count > 0)
                 {
                     Trace.WriteLine("ProcessTCPInfo: Process has exited, closing all connections.", "DEBUG-MACHINA");
-
+                    for (int i = 0; i < connections.Count; i++)
+                    {
+                        TCPConnection connection = connections[i];
+                        Trace.WriteLine($"ProcessTCPInfo: Closing connection {connections}", "DEBUG-MACHINA");
+                        connection.Socket?.StopCapture();
+                        connection.Socket?.Dispose();
+                        connection.Socket = null;
+                      
+                    }
                     connections.Clear();
                 }
 
@@ -254,6 +262,7 @@ namespace Machina.Infrastructure
                             Trace.WriteLine($"ProcessTCPInfo: Removed connection {connections[i]}", "DEBUG-MACHINA");
                             connections[i].Socket.StopCapture();
                             connections[i].Socket?.Dispose();
+                            connections[i].Socket = null;
                             connections.RemoveAt(i);
                         }
                     }

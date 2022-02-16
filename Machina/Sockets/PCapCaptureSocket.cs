@@ -34,6 +34,7 @@ namespace Machina.Sockets
         private Task _monitorTask;
         private CancellationTokenSource _tokenSource;
         private bool _disposedValue;
+        private readonly int BUFFER_SIZE = (1024 * 64) + 1;
 
         public void StartCapture(uint localAddress, uint remoteAddress = 0)
         {
@@ -144,8 +145,7 @@ namespace Machina.Sockets
 
         private void FreeBuffers()
         {
-            while (_pendingBuffers.TryDequeue(out Tuple<byte[], int> next))
-                BufferCache.ReleaseBuffer(next.Item1);
+            while (_pendingBuffers.TryDequeue(out Tuple<byte[], int> _)) ;
         }
 
         public CapturedData Receive()
@@ -204,14 +204,14 @@ namespace Machina.Sockets
                         if (packetHeader.caplen <= layer2Length)
                             continue;
 
-                        byte[] buffer = BufferCache.AllocateBuffer();
-
                         // prepare data - skip the 14-byte ethernet header
                         int allocatedSize = (int)packetHeader.caplen - layer2Length;
-                        if (allocatedSize > buffer.Length)
+                        // 16MB
+                        if (allocatedSize > 0x1000000)
                             Trace.WriteLine($"PCapCaptureSocket: packet length too large: {allocatedSize} ", "DEBUG-MACHINA");
                         else
                         {
+                            byte[] buffer = new byte[allocatedSize];
                             Marshal.Copy(packetDataPtr + layer2Length, buffer, 0, allocatedSize);
 
                             _pendingBuffers.Enqueue(new Tuple<byte[], int>(buffer, allocatedSize));
@@ -240,6 +240,13 @@ namespace Machina.Sockets
                 {
                     _tokenSource?.Dispose();
                     _monitorTask?.Dispose();
+                    if (_activeDevice != null)
+                    {
+                        if (_activeDevice.Handle != IntPtr.Zero)
+                            pcap_close(_activeDevice.Handle);
+
+                        _activeDevice.Handle = IntPtr.Zero;
+                    }
 
                     FreeBuffers();
                 }

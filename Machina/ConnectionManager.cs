@@ -97,7 +97,11 @@ namespace Machina
                 if (disposing)
                 {
                     for (int i = 0; i < Connections.Count; i++)
+                    {
+                        Connections[i].Socket?.StopCapture();
                         Connections[i].Socket?.Dispose();
+                        Connections[i].Socket = null;
+                    }
                     Connections.Clear();
                 }
 

@@ -166,7 +166,6 @@ namespace Machina
                             OnDataReceived(connection, payloadBuffer);
                     }
 
-                    BufferCache.ReleaseBuffer(data.Buffer);
                 }
             }
         }
